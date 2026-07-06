@@ -102,4 +102,4 @@ function trackingLink(awb) {
     return `https://www.fancourier.ro/awb-tracking/?xawb=${awb}`;
 }
 
-module.exports = { createAwb, getLabel, trackingLink };
+module.exports = { createAwb, getLabel, trackingLink, getToken };
