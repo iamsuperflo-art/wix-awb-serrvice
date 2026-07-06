@@ -23,21 +23,45 @@ function checkSecret(req, res) {
     return true;
 }
 
+// Nume judete dupa codul ISO (fara diacritice, pt. nomenclatoarele curierilor)
+const JUDETE = {
+    'RO-AB':'Alba','RO-AR':'Arad','RO-AG':'Arges','RO-BC':'Bacau','RO-BH':'Bihor',
+    'RO-BN':'Bistrita-Nasaud','RO-BT':'Botosani','RO-BV':'Brasov','RO-BR':'Braila',
+    'RO-B':'Bucuresti','RO-BZ':'Buzau','RO-CS':'Caras-Severin','RO-CL':'Calarasi',
+    'RO-CJ':'Cluj','RO-CT':'Constanta','RO-CV':'Covasna','RO-DB':'Dambovita',
+    'RO-DJ':'Dolj','RO-GL':'Galati','RO-GR':'Giurgiu','RO-GJ':'Gorj','RO-HR':'Harghita',
+    'RO-HD':'Hunedoara','RO-IL':'Ialomita','RO-IS':'Iasi','RO-IF':'Ilfov',
+    'RO-MM':'Maramures','RO-MH':'Mehedinti','RO-MS':'Mures','RO-NT':'Neamt',
+    'RO-OT':'Olt','RO-PH':'Prahova','RO-SM':'Satu Mare','RO-SJ':'Salaj','RO-SB':'Sibiu',
+    'RO-SV':'Suceava','RO-TR':'Teleorman','RO-TM':'Timis','RO-TL':'Tulcea',
+    'RO-VS':'Vaslui','RO-VL':'Valcea','RO-VN':'Vrancea'
+};
+
+// Velo/SDK si REST folosesc nume diferite pentru aceleasi campuri de adresa
+function pickAddressLine(a) {
+    if (!a) return '';
+    if (a.addressLine) return a.addressLine;
+    if (a.addressLine1) return a.addressLine1 + (a.addressLine2 ? ', ' + a.addressLine2 : '');
+    if (a.streetAddress) return `${a.streetAddress.name || ''} ${a.streetAddress.number || ''}`.trim();
+    return '';
+}
+
 /** Extrage datele necesare AWB-ului dintr-o comanda Wix eCom. */
 function extractShipmentData(order) {
     const ri = order.recipientInfo || {};
     const addr = ri.address || {};
     const cd = ri.contactDetails || {};
+    const addressLine = pickAddressLine(addr);
 
-    if (!addr.city || !addr.addressLine) throw new Error('Adresa incompleta pe comanda #' + order.number);
+    if (!addr.city || !addressLine) throw new Error('Adresa incompleta pe comanda #' + order.number);
     if (!cd.phone) throw new Error('Telefon lipsa pe comanda #' + order.number);
 
     return {
         address: {
             city: addr.city,
-            county: addr.subdivisionFullname || '',   // ex. "Mures"; pt. Bucuresti: "Bucuresti"
+            county: addr.subdivisionFullname || JUDETE[addr.subdivision] || '',
             subdivision: addr.subdivision || '',      // ex. "RO-B", "RO-MS"
-            addressLine: addr.addressLine,
+            addressLine: addressLine,
             zipCode: addr.postalCode || ''
         },
         contact: {
