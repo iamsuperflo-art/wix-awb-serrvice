@@ -105,4 +105,20 @@ router.get('/awb/label/:courier/:awb', async (req, res) => {
     }
 });
 
+// GET /fancourier/branches?secret=...
+// Ruta ajutatoare (o singura data): afiseaza punctele de pe contul FanCourier,
+// ca sa afli clientId-ul ("id" din raspuns). Necesita doar FANCOURIER_USERNAME/PASSWORD setate.
+router.get('/fancourier/branches', async (req, res) => {
+    if (!checkSecret(req, res)) return;
+    try {
+        const token = await fancourier.getToken();
+        const r = await fetch('https://api.fancourier.ro/reports/branches', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        res.json(await r.json());
+    } catch (e) {
+        res.status(422).json({ error: e.message });
+    }
+});
+
 module.exports = router;
