@@ -92,10 +92,15 @@ async function createAwb(p) {
 /** Returneaza eticheta PDF (Buffer) pentru un AWB. */
 async function getLabel(awb) {
     const token = await getToken();
-    const url = `${BASE}/awb/label?clientId=${encodeURIComponent(CLIENT_ID)}&awbs[]=${encodeURIComponent(awb)}`;
+    // pdf=1 e obligatoriu, altfel raspunsul e HTML
+    const url = `${BASE}/awb/label?clientId=${encodeURIComponent(CLIENT_ID)}&awbs[]=${encodeURIComponent(awb)}&pdf=1&language=ro`;
     const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
     if (!res.ok) throw new Error('FanCourier label: HTTP ' + res.status);
-    return Buffer.from(await res.arrayBuffer());
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.slice(0, 4).toString() !== '%PDF') {
+        throw new Error('FanCourier label: ' + buf.toString().slice(0, 300));
+    }
+    return buf;
 }
 
 function trackingLink(awb) {
