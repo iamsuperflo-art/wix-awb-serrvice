@@ -94,7 +94,9 @@ router.post('/awb', async (req, res) => {
         if (!weightKg || weightKg <= 0) return res.status(400).json({ error: 'weightKg invalid' });
 
         const data = extractShipmentData(order);
-        const courierName = pickCourier(data.address.subdivision);
+        // curierul ales manual in dashboard are prioritate; altfel, rutare dupa judet
+        const override = (req.body.courier || '').toLowerCase();
+        const courierName = couriers[override] ? override : pickCourier(data.address.subdivision);
         const courier = couriers[courierName];
 
         const result = await courier.createAwb({
