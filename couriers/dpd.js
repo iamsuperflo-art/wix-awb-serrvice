@@ -32,11 +32,46 @@ async function post(path, body) {
 }
 
 /**
+ * Gaseste localitatea in nomenclatorul DPD si returneaza siteId.
+ * Incearca intai dupa cod postal (rezolva satele -> comuna corecta),
+ * apoi dupa nume. Arunca eroare lizibila daca nu gaseste nimic.
+ */
+async function findSiteId(city, zipCode) {
+    const cityClean = stripDiacritics(city).trim().toUpperCase();
+
+    if (zipCode) {
+        const res = await post('location/site/', { countryId: COUNTRY_RO, postCode: zipCode });
+        const data = await res.json();
+        const sites = data.sites || [];
+        if (sites.length === 1) return sites[0].id;
+        if (sites.length > 1) {
+            const exact = sites.find(s => stripDiacritics(s.name).toUpperCase() === cityClean);
+            return (exact || sites[0]).id;
+        }
+    }
+
+    const res2 = await post('location/site/', { countryId: COUNTRY_RO, name: cityClean });
+    const data2 = await res2.json();
+    const sites2 = data2.sites || [];
+    if (sites2.length === 1) return sites2[0].id;
+    if (sites2.length > 1) {
+        const exact = sites2.find(s => stripDiacritics(s.name).toUpperCase() === cityClean);
+        if (exact) return exact.id;
+        throw new Error(`Localitate ambigua "${city}" - candidati DPD: ` +
+            sites2.slice(0, 5).map(s => `${s.name} (${s.regionName || s.region || ''})`).join(', ') +
+            '. Corecteaza orasul/codul postal in comanda Wix.');
+    }
+    throw new Error(`Localitatea "${city}" (cod postal ${zipCode || '-'}) nu exista in nomenclatorul DPD. ` +
+        'Corecteaza orasul in comanda Wix (la sate, foloseste numele comunei).');
+}
+
+/**
  * Creeaza o expediere DPD (AWB).
  * @param {object} p - aceleasi campuri ca la fancourier.createAwb
  * @returns {Promise<{awb: string, courier: 'dpd'}>}
  */
 async function createAwb(p) {
+    const siteId = await findSiteId(p.address.city, p.address.zipCode);
     const body = {
         // sender: omis => se foloseste expeditorul implicit de pe contractul DPD
         recipient: {
@@ -46,8 +81,7 @@ async function createAwb(p) {
             email: p.contact.email || undefined,
             address: {
                 countryId: COUNTRY_RO,
-                siteName: stripDiacritics(p.address.city),   // localitatea, fara diacritice
-                postCode: p.address.zipCode || undefined,     // ajuta la dezambiguizarea localitatii
+                siteId: siteId,   // localitatea, rezolvata prin nomenclatorul DPD
                 // pt. adrese interne, DPD cere strada structurata SAU totul in addressNote
                 addressNote: stripDiacritics(p.address.addressLine).slice(0, 200)
             }
