@@ -46,11 +46,14 @@ function pickAddressLine(a) {
     return '';
 }
 
-/** Extrage datele necesare AWB-ului dintr-o comanda Wix eCom. */
+/** Extrage datele necesare AWB-ului dintr-o comanda Wix eCom.
+ *  Prefera shippingDestination (reflecta editarile din dashboardul Wix);
+ *  recipientInfo ramane snapshot-ul de la plasarea comenzii. */
 function extractShipmentData(order) {
+    const dest = order.shippingInfo && order.shippingInfo.logistics && order.shippingInfo.logistics.shippingDestination;
     const ri = order.recipientInfo || {};
-    const addr = ri.address || {};
-    const cd = ri.contactDetails || {};
+    const addr = (dest && dest.address) || ri.address || {};
+    const cd = (dest && dest.contactDetails) || ri.contactDetails || {};
     const addressLine = pickAddressLine(addr);
 
     if (!addr.city || !addressLine) throw new Error('Adresa incompleta pe comanda #' + order.number);
