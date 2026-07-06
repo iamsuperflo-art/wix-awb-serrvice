@@ -1,0 +1,99 @@
+// couriers/dpd.js
+// DPD Romania REST API (api.dpd.ro/v1) — folosit pentru comenzile din afara Bucurestiului
+// Docs: https://api.dpd.ro/web-api.html | Exemple: https://services.dpd.ro/api/api_examples.php
+
+const BASE = 'https://api.dpd.ro/v1';
+
+const USERNAME   = process.env.DPD_USERNAME;
+const PASSWORD   = process.env.DPD_PASSWORD;
+const SERVICE_ID = Number(process.env.DPD_SERVICE_ID || 2505); // 2505 = DPD Classic (Romania). Verifica cu /services pe contractul tau.
+const COUNTRY_RO = 642;
+
+function auth(body) {
+    return Object.assign({ userName: USERNAME, password: PASSWORD, language: 'RO' }, body);
+}
+
+function stripDiacritics(s) {
+    return (s || '')
+        .replace(/[șşȘŞ]/g, 's').replace(/[țţȚŢ]/g, 't')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+async function post(path, body) {
+    const res = await fetch(`${BASE}/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(auth(body))
+    });
+    return res;
+}
+
+/**
+ * Creeaza o expediere DPD (AWB).
+ * @param {object} p - aceleasi campuri ca la fancourier.createAwb
+ * @returns {Promise<{awb: string, courier: 'dpd'}>}
+ */
+async function createAwb(p) {
+    const body = {
+        // sender: omis => se foloseste expeditorul implicit de pe contractul DPD
+        recipient: {
+            clientName: p.contact.name,
+            privatePerson: true,
+            phone1: { number: p.contact.phone },
+            email: p.contact.email || undefined,
+            address: {
+                countryId: COUNTRY_RO,
+                siteName: stripDiacritics(p.address.city),   // localitatea, fara diacritice
+                postCode: p.address.zipCode || undefined,     // ajuta la dezambiguizarea localitatii
+                addressLine1: stripDiacritics(p.address.addressLine).slice(0, 200)
+            }
+        },
+        service: {
+            serviceId: SERVICE_ID,
+            autoAdjustPickupDate: true
+        },
+        content: {
+            parcelsCount: p.parcels || 1,
+            contents: p.reference,
+            package: 'BOX',
+            totalWeight: p.weightKg
+        },
+        payment: { courierServicePayer: 'SENDER' },
+        ref1: p.reference
+    };
+
+    if (p.cod > 0) {
+        body.service.additionalServices = {
+            cod: { amount: p.cod, processingType: 'CASH' }
+        };
+    }
+
+    const res = await post('shipment/', body);
+    const data = await res.json();
+
+    if (data.error) throw new Error('DPD: ' + (data.error.message || JSON.stringify(data.error)));
+    if (!data.id) throw new Error('DPD: AWB lipsa in raspuns: ' + JSON.stringify(data));
+
+    return { awb: String(data.id), courier: 'dpd' };
+}
+
+/** Returneaza eticheta PDF (Buffer) pentru un AWB. */
+async function getLabel(awb) {
+    const res = await post('print/', {
+        paperSize: 'A6',
+        parcels: [{ parcel: { id: awb } }]
+    });
+    if (!res.ok) throw new Error('DPD label: HTTP ' + res.status);
+    const buf = Buffer.from(await res.arrayBuffer());
+    // daca raspunsul e JSON, e o eroare, nu un PDF
+    if (buf.slice(0, 4).toString() !== '%PDF') {
+        throw new Error('DPD label: ' + buf.toString().slice(0, 300));
+    }
+    return buf;
+}
+
+function trackingLink(awb) {
+    return `https://tracking.dpd.ro/?shipmentNumber=${awb}&language=ro`;
+}
+
+module.exports = { createAwb, getLabel, trackingLink };

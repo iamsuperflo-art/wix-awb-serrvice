@@ -1,0 +1,17 @@
+# --- deja existent ---
+RAILWAY_WEBHOOK_SECRET=acelasi-secret-ca-in-wix
+
+# --- FanCourier (selfAWB) ---
+FANCOURIER_USERNAME=
+FANCOURIER_PASSWORD=
+FANCOURIER_CLIENT_ID=
+# optionale:
+# FANCOURIER_SERVICE=Standard
+# FANCOURIER_SERVICE_COD=Cont Colector
+# FANCOURIER_PAYMENT=sender
+
+# --- DPD Romania ---
+DPD_USERNAME=
+DPD_PASSWORD=
+# optional (2505 = DPD Classic; verifica serviciile de pe contractul tau):
+# DPD_SERVICE_ID=2505
