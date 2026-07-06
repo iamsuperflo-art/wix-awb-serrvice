@@ -23,7 +23,10 @@ async function post(path, body) {
     const res = await fetch(`${BASE}/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(auth(body))
+        body: JSON.stringify(auth(body)),
+        signal: AbortSignal.timeout(10000)   // DPD nu raspunde -> eroare lizibila, nu timeout Wix
+    }).catch((e) => {
+        throw new Error('DPD nu raspunde (' + e.message + '). Verifica userul de API - DPD cere un user dedicat, activat la cerere.');
     });
     return res;
 }
@@ -45,7 +48,8 @@ async function createAwb(p) {
                 countryId: COUNTRY_RO,
                 siteName: stripDiacritics(p.address.city),   // localitatea, fara diacritice
                 postCode: p.address.zipCode || undefined,     // ajuta la dezambiguizarea localitatii
-                addressLine1: stripDiacritics(p.address.addressLine).slice(0, 200)
+                // pt. adrese interne, DPD cere strada structurata SAU totul in addressNote
+                addressNote: stripDiacritics(p.address.addressLine).slice(0, 200)
             }
         },
         service: {
