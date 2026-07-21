@@ -32,35 +32,51 @@ async function post(path, body) {
 }
 
 /**
- * Gaseste localitatea in nomenclatorul DPD si returneaza siteId.
- * Incearca intai dupa cod postal (rezolva satele -> comuna corecta),
- * apoi dupa nume. Arunca eroare lizibila daca nu gaseste nimic.
+ * Gaseste localitatea in nomenclatorul DPD si returneaza { id, warning }.
+ * Ordinea: 1) NUMELE localitatii (dezambiguizat prin judet la omonime),
+ * 2) codul postal doar ca fallback - clientii gresesc des codul postal,
+ * asa ca folosirea lui genereaza un avertisment vizibil in dashboard.
  */
-async function findSiteId(city, zipCode) {
+async function findSiteId(city, zipCode, county) {
     const cityClean = stripDiacritics(city).trim().toUpperCase();
+    const countyClean = stripDiacritics(county || '').trim().toUpperCase();
 
+    // 1) cautare dupa nume
+    const res = await post('location/site/', { countryId: COUNTRY_RO, name: cityClean });
+    const data = await res.json();
+    const sites = data.sites || [];
+    const exact = sites.filter(s => stripDiacritics(s.name || '').toUpperCase() === cityClean);
+
+    if (exact.length === 1) return { id: exact[0].id, warning: '' };
+    if (exact.length > 1) {
+        // localitati omonime -> dezambiguizare prin judet, apoi prin cod postal
+        const byCounty = countyClean
+            ? exact.filter(s => stripDiacritics(s.region || s.regionName || '').toUpperCase().includes(countyClean))
+            : [];
+        if (byCounty.length === 1) return { id: byCounty[0].id, warning: '' };
+        const byZip = zipCode ? exact.filter(s => String(s.postCode || '') === String(zipCode)) : [];
+        if (byZip.length === 1) return { id: byZip[0].id, warning: '' };
+        const pick = byCounty[0] || exact[0];
+        return {
+            id: pick.id,
+            warning: `Localitati multiple cu numele "${city}" - am ales ${pick.name} (${pick.region || pick.regionName || '?'}). VERIFICA!`
+        };
+    }
+
+    // 2) fallback: cod postal (sate -> comuna corecta; dar un cod gresit duce la ALTA localitate)
     if (zipCode) {
-        const res = await post('location/site/', { countryId: COUNTRY_RO, postCode: zipCode });
-        const data = await res.json();
-        const sites = data.sites || [];
-        if (sites.length === 1) return sites[0].id;
-        if (sites.length > 1) {
-            const exact = sites.find(s => stripDiacritics(s.name).toUpperCase() === cityClean);
-            return (exact || sites[0]).id;
+        const res2 = await post('location/site/', { countryId: COUNTRY_RO, postCode: zipCode });
+        const data2 = await res2.json();
+        const sites2 = data2.sites || [];
+        if (sites2.length >= 1) {
+            const s = sites2[0];
+            return {
+                id: s.id,
+                warning: `Localitatea "${city}" nu exista la DPD; am folosit codul postal ${zipCode} -> ${s.name} (${s.region || s.regionName || '?'}). VERIFICA inainte de predare!`
+            };
         }
     }
 
-    const res2 = await post('location/site/', { countryId: COUNTRY_RO, name: cityClean });
-    const data2 = await res2.json();
-    const sites2 = data2.sites || [];
-    if (sites2.length === 1) return sites2[0].id;
-    if (sites2.length > 1) {
-        const exact = sites2.find(s => stripDiacritics(s.name).toUpperCase() === cityClean);
-        if (exact) return exact.id;
-        throw new Error(`Localitate ambigua "${city}" - candidati DPD: ` +
-            sites2.slice(0, 5).map(s => `${s.name} (${s.regionName || s.region || ''})`).join(', ') +
-            '. Corecteaza orasul/codul postal in comanda Wix.');
-    }
     throw new Error(`Localitatea "${city}" (cod postal ${zipCode || '-'}) nu exista in nomenclatorul DPD. ` +
         'Corecteaza orasul in comanda Wix (la sate, foloseste numele comunei).');
 }
@@ -71,7 +87,8 @@ async function findSiteId(city, zipCode) {
  * @returns {Promise<{awb: string, courier: 'dpd'}>}
  */
 async function createAwb(p) {
-    const siteId = await findSiteId(p.address.city, p.address.zipCode);
+    const site = await findSiteId(p.address.city, p.address.zipCode, p.address.county);
+    const siteId = site.id;
     const body = {
         // sender: omis => se foloseste expeditorul implicit de pe contractul DPD
         recipient: {
@@ -112,7 +129,7 @@ async function createAwb(p) {
     if (data.error) throw new Error('DPD: ' + (data.error.message || JSON.stringify(data.error)));
     if (!data.id) throw new Error('DPD: AWB lipsa in raspuns: ' + JSON.stringify(data));
 
-    return { awb: String(data.id), courier: 'dpd' };
+    return { awb: String(data.id), courier: 'dpd', warning: site.warning || '' };
 }
 
 /** Returneaza eticheta PDF (Buffer) pentru un AWB. */
