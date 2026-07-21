@@ -110,7 +110,8 @@ router.post('/awb', async (req, res) => {
         res.json({
             awb: result.awb,
             courier: courierName,
-            trackingLink: courier.trackingLink(result.awb)
+            trackingLink: courier.trackingLink(result.awb),
+            warning: result.warning || ''
         });
     } catch (e) {
         console.error('Eroare AWB:', e.message);
